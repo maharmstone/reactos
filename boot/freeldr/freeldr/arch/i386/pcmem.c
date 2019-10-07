@@ -549,6 +549,8 @@ PcMemFinalizeMemoryMap(
     ReserveMemory(MemoryMap, STACKLOW, STACKADDR - STACKLOW, LoaderOsloaderStack, "FreeLdr stack");
     ReserveMemory(MemoryMap, FREELDR_BASE, FrLdrImageSize, LoaderLoadedProgram, "FreeLdr image");
 
+    ReserveMemory(MemoryMap, 0x40000000, 0x400000, LoaderReserve, "Reserved");
+
     /* Default to 1 page above freeldr for the disk read buffer */
     DiskReadBuffer = (PUCHAR)ALIGN_UP_BY(FREELDR_BASE + FrLdrImageSize, PAGE_SIZE);
     DiskReadBufferSize = PAGE_SIZE;
