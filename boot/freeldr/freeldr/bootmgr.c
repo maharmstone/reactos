@@ -66,6 +66,7 @@ static const struct
     {"Windows"     , EditCustomBootNTOS , LoadAndBootWindows},
     {"Windows2003" , EditCustomBootNTOS , LoadAndBootWindows},
     {"WindowsVista", EditCustomBootNTOS , LoadAndBootWindows},
+    {"Windows7"    , EditCustomBootNTOS , LoadAndBootWindows},
 };
 
 /* FUNCTIONS ******************************************************************/

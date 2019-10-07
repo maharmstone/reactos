@@ -86,6 +86,16 @@ typedef struct _LOADER_PARAMETER_BLOCK_VISTA
     LOADER_PARAMETER_BLOCK2 Block2;
 } LOADER_PARAMETER_BLOCK_VISTA, *PLOADER_PARAMETER_BLOCK_VISTA;
 
+typedef struct _LOADER_PARAMETER_BLOCK_WIN7
+{
+    ULONG OsMajorVersion;
+    ULONG OsMinorVersion;
+    ULONG Size;
+    ULONG Reserved;
+    LOADER_PARAMETER_BLOCK1 Block1;
+    LOADER_PARAMETER_BLOCK2 Block2;
+} LOADER_PARAMETER_BLOCK_WIN7, *PLOADER_PARAMETER_BLOCK_WIN7;
+
 typedef struct _LOADER_PARAMETER_EXTENSION1
 {
     ULONG Size;
@@ -133,7 +143,18 @@ typedef struct _LOADER_PARAMETER_EXTENSION2
     //
     ULONG ResumePages;
     PVOID DumpHeader;
+    PVOID BgContext;
+    PVOID NumaLocalityInfo;
+    PVOID NumaGroupAssignment;
+    LIST_ENTRY AttachedHives;
+    ULONG MemoryCachingRequirementsCount;
+    PVOID MemoryCachingRequirements;
+    TPM_BOOT_ENTROPY_LDR_RESULT TpmBootEntropyResult;
+    ULONGLONG ProcessorCounterFrequency;
 } LOADER_PARAMETER_EXTENSION2, *PLOADER_PARAMETER_EXTENSION2;
+
+#pragma pack(push)
+#pragma pack(1)
 
 typedef struct _LOADER_PARAMETER_EXTENSION_VISTA
 {
@@ -143,10 +164,28 @@ typedef struct _LOADER_PARAMETER_EXTENSION_VISTA
     LOADER_PARAMETER_EXTENSION2 Extension2;
 } LOADER_PARAMETER_EXTENSION_VISTA, *PLOADER_PARAMETER_EXTENSION_VISTA;
 
+#pragma pack(pop)
+
+typedef struct _LOADER_PARAMETER_EXTENSION_WIN7
+{
+    LOADER_PARAMETER_EXTENSION1 Extension1;
+    LOADER_PARAMETER_EXTENSION2 Extension2;
+} LOADER_PARAMETER_EXTENSION_WIN7, *PLOADER_PARAMETER_EXTENSION_WIN7;
+
 typedef struct _LOADER_SYSTEM_BLOCK
 {
-    LOADER_PARAMETER_BLOCK_VISTA LoaderBlock;
-    LOADER_PARAMETER_EXTENSION_VISTA Extension;
+    union
+    {
+        LOADER_PARAMETER_BLOCK_VISTA LoaderBlockVista;
+        LOADER_PARAMETER_BLOCK_WIN7 LoaderBlockWin7;
+    } u1;
+
+    union
+    {
+        LOADER_PARAMETER_EXTENSION_VISTA ExtensionVista;
+        LOADER_PARAMETER_EXTENSION_WIN7 ExtensionWin7;
+    } u2;
+
     SETUP_LOADER_BLOCK SetupBlock;
 #ifdef _M_IX86
     HEADLESS_LOADER_BLOCK HeadlessLoaderBlock;
