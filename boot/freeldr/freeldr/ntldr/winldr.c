@@ -209,15 +209,41 @@ WinLdrInitializePhase1(PLOADER_PARAMETER_BLOCK1 LoaderBlock1,
         /* Allocate the ARC structure */
         ArcDiskSig = FrLdrHeapAlloc(sizeof(ARC_DISK_SIGNATURE_EX), 'giSD');
 
-        /* Copy the data over */
-        RtlCopyMemory(ArcDiskSig, &reactos_arc_disk_info[i], sizeof(ARC_DISK_SIGNATURE_EX));
+        if (VersionToBoot >= _WIN32_WINNT_WIN7)
+        {
+            RtlCopyMemory(ArcDiskSig->ArcName, reactos_arc_disk_info[i].ArcName, sizeof(reactos_arc_disk_info[i].ArcName));
 
-        /* Set the ARC Name pointer */
-        ArcDiskSig->DiskSignature.ArcName = PaToVa(ArcDiskSig->ArcName);
+            /* Windows 7 uses a slightly different, undocumented, version of ARC_DISK_SIGNATURE - we
+             * translate here from the old style to the new one. */
+            ArcDiskSig->u.DiskSignatureWin7.Signature = reactos_arc_disk_info[i].u.DiskSignature.Signature;
+            ArcDiskSig->u.DiskSignatureWin7.ArcName = PaToVa(ArcDiskSig->ArcName);
+            ArcDiskSig->u.DiskSignatureWin7.CheckSum = reactos_arc_disk_info[i].u.DiskSignature.CheckSum;
+            ArcDiskSig->u.DiskSignatureWin7.ValidPartitionTable = reactos_arc_disk_info[i].u.DiskSignature.ValidPartitionTable;
+            ArcDiskSig->u.DiskSignatureWin7.xInt13 = reactos_arc_disk_info[i].u.DiskSignature.xInt13;
+            ArcDiskSig->u.DiskSignatureWin7.IsGpt = reactos_arc_disk_info[i].u.DiskSignature.IsGpt;
+            ArcDiskSig->u.DiskSignatureWin7.Reserved = reactos_arc_disk_info[i].u.DiskSignature.Reserved;
 
-        /* Insert into the list */
-        InsertTailList(&LoaderBlock1->ArcDiskInformation->DiskSignatureListHead,
-                       &ArcDiskSig->DiskSignature.ListEntry);
+            RtlCopyMemory(ArcDiskSig->u.DiskSignatureWin7.GptSignature, reactos_arc_disk_info[i].u.DiskSignature.GptSignature,
+                          sizeof(reactos_arc_disk_info[i].u.DiskSignature.GptSignature));
+
+            ArcDiskSig->u.DiskSignatureWin7.unknown = 0; // something to do with VHDs
+
+            /* Insert into the list */
+            InsertTailList(&LoaderBlock1->ArcDiskInformation->DiskSignatureListHead,
+                           &ArcDiskSig->u.DiskSignatureWin7.ListEntry);
+        }
+        else
+        {
+            /* Copy the data over */
+            RtlCopyMemory(ArcDiskSig, &reactos_arc_disk_info[i], sizeof(ARC_DISK_SIGNATURE_EX));
+
+            /* Set the ARC Name pointer */
+            ArcDiskSig->u.DiskSignature.ArcName = PaToVa(ArcDiskSig->ArcName);
+
+            /* Insert into the list */
+            InsertTailList(&LoaderBlock1->ArcDiskInformation->DiskSignatureListHead,
+                        &ArcDiskSig->u.DiskSignature.ListEntry);
+        }
     }
 
     /* Convert all lists to Virtual address */

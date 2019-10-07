@@ -31,9 +31,29 @@ typedef struct  /* Root System Descriptor Pointer */
 } RSDP_DESCRIPTOR, *PRSDP_DESCRIPTOR;
 #include <poppack.h>
 
+#include <pshpack1.h>
+typedef struct _ARC_DISK_SIGNATURE_WIN7
+{
+    LIST_ENTRY ListEntry;
+    ULONG Signature;
+    PCHAR ArcName;
+    ULONG CheckSum;
+    CHAR ValidPartitionTable;
+    CHAR xInt13;
+    CHAR IsGpt;
+    CHAR Reserved;
+    CHAR GptSignature[16];
+    ULONG unknown;
+} ARC_DISK_SIGNATURE_WIN7, *PARC_DISK_SIGNATURE_WIN7;
+#include <poppack.h>
+
 typedef struct _ARC_DISK_SIGNATURE_EX
 {
-    ARC_DISK_SIGNATURE DiskSignature;
+    union
+    {
+        ARC_DISK_SIGNATURE DiskSignature;
+        ARC_DISK_SIGNATURE_WIN7 DiskSignatureWin7;
+    } u;
     CHAR ArcName[MAX_PATH];
 } ARC_DISK_SIGNATURE_EX, *PARC_DISK_SIGNATURE_EX;
 
