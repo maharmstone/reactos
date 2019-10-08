@@ -353,6 +353,9 @@ typedef enum _TPM_BOOT_ENTROPY_RESULT_CODE
     TpmBootEntropySuccess = 4
 } TPM_BOOT_ENTROPY_RESULT_CODE;
 
+#pragma pack(push)
+#pragma pack(1)
+
 typedef struct _TPM_BOOT_ENTROPY_LDR_RESULT
 {
     ULONGLONG Policy;
@@ -361,7 +364,10 @@ typedef struct _TPM_BOOT_ENTROPY_LDR_RESULT
     ULONGLONG Time;
     ULONG EntropyLength;
     UCHAR EntropyData[40];
+    ULONG padding;
 } TPM_BOOT_ENTROPY_LDR_RESULT, *PTPM_BOOT_ENTROPY_LDR_RESULT;
+
+#pragma pack(pop)
 
 //
 // Extended Loader Parameter Block

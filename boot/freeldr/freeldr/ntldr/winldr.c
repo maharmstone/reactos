@@ -1102,10 +1102,10 @@ LoadAndBootWindowsCommon(
     /* Zero KI_USER_SHARED_DATA page */
     RtlZeroMemory((PVOID)KI_USER_SHARED_DATA, MM_PAGE_SIZE);
 
-    WinLdrpDumpMemoryDescriptors(LoaderBlockVA);
-    WinLdrpDumpBootDriver(LoaderBlockVA);
+    WinLdrpDumpMemoryDescriptors(PaToVa(LoaderBlock1));
+    WinLdrpDumpBootDriver(PaToVa(LoaderBlock1));
 #ifndef _M_AMD64
-    WinLdrpDumpArcDisks(LoaderBlockVA);
+    WinLdrpDumpArcDisks(PaToVa(LoaderBlock1), OperatingSystemVersion);
 #endif
 
     /* Pass control */
@@ -1152,20 +1152,31 @@ WinLdrpDumpBootDriver(PLOADER_PARAMETER_BLOCK1 LoaderBlock1)
 }
 
 VOID
-WinLdrpDumpArcDisks(PLOADER_PARAMETER_BLOCK1 LoaderBlock1)
+WinLdrpDumpArcDisks(PLOADER_PARAMETER_BLOCK1 LoaderBlock1, USHORT OperatingSystemVersion)
 {
     PLIST_ENTRY NextBd;
-    PARC_DISK_SIGNATURE ArcDisk;
 
     NextBd = LoaderBlock1->ArcDiskInformation->DiskSignatureListHead.Flink;
 
     while (NextBd != &LoaderBlock1->ArcDiskInformation->DiskSignatureListHead)
     {
-        ArcDisk = CONTAINING_RECORD(NextBd, ARC_DISK_SIGNATURE, ListEntry);
+        if (OperatingSystemVersion >= _WIN32_WINNT_WIN7)
+        {
+            PARC_DISK_SIGNATURE_WIN7 ArcDisk = CONTAINING_RECORD(NextBd, ARC_DISK_SIGNATURE_WIN7, ListEntry);
 
-        TRACE("ArcDisk %s checksum: 0x%X, signature: 0x%X\n",
-            ArcDisk->ArcName, ArcDisk->CheckSum, ArcDisk->Signature);
+            TRACE("ArcDisk %s checksum: 0x%X, signature: 0x%X\n",
+                  ArcDisk->ArcName, ArcDisk->CheckSum, ArcDisk->Signature);
 
-        NextBd = ArcDisk->ListEntry.Flink;
+            NextBd = ArcDisk->ListEntry.Flink;
+        }
+        else
+        {
+            PARC_DISK_SIGNATURE ArcDisk = CONTAINING_RECORD(NextBd, ARC_DISK_SIGNATURE, ListEntry);
+
+            TRACE("ArcDisk %s checksum: 0x%X, signature: 0x%X\n",
+                  ArcDisk->ArcName, ArcDisk->CheckSum, ArcDisk->Signature);
+
+            NextBd = ArcDisk->ListEntry.Flink;
+        }
     }
 }
