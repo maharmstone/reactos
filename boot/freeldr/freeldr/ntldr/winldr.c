@@ -321,6 +321,8 @@ WinLdrLoadDeviceDriver(PLIST_ENTRY LoadOrderListHead,
                        PLDR_DATA_TABLE_ENTRY *DriverDTE)
 {
     CHAR FullPath[1024];
+    CHAR FullFileName[1024];
+    CHAR ArcPath[1024];
     CHAR DriverPath[1024];
     CHAR DllName[1024];
     PCHAR DriverNamePos;
@@ -356,13 +358,15 @@ WinLdrLoadDeviceDriver(PLIST_ENTRY LoadOrderListHead,
     }
 
     // It's not loaded, we have to load it
-    RtlStringCbPrintfA(FullPath, sizeof(FullPath), "%s%wZ", BootPath, FilePath);
-    Success = PeLdrLoadImage(FullPath, LoaderBootDriver, &DriverBase);
+    RtlStringCbPrintfA(ArcPath, sizeof(ArcPath), "%s%wZ", BootPath, FilePath);
+    Success = PeLdrLoadImage(ArcPath, LoaderBootDriver, &DriverBase);
     if (!Success)
         return FALSE;
 
     // Allocate a DTE for it
-    Success = PeLdrAllocateDataTableEntry(LoadOrderListHead, DllName, DllName, DriverBase, DriverDTE);
+    RtlStringCbPrintfA(FullFileName, sizeof(FullFileName), "\\SystemRoot\\%s%s", DriverPath, DllName);
+
+    Success = PeLdrAllocateDataTableEntry(LoadOrderListHead, DllName, FullFileName, DriverBase, DriverDTE);
     if (!Success)
     {
         ERR("PeLdrAllocateDataTableEntry() failed\n");
@@ -373,8 +377,11 @@ WinLdrLoadDeviceDriver(PLIST_ENTRY LoadOrderListHead,
     (*DriverDTE)->Flags |= Flags;
 
     // Look for any dependencies it may have, and load them too
-    RtlStringCbPrintfA(FullPath, sizeof(FullPath), "%s%s", BootPath, DriverPath);
-    Success = PeLdrScanImportDescriptorTable(LoadOrderListHead, FullPath, *DriverDTE);
+
+    RtlStringCbPrintfA(ArcPath, sizeof(ArcPath), "%s%s", BootPath, DriverPath);
+    RtlStringCbPrintfA(FullPath, sizeof(FullPath), "\\SystemRoot\\%s%s", DriverPath);
+
+    Success = PeLdrScanImportDescriptorTable(LoadOrderListHead, FullPath, ArcPath, *DriverDTE);
     if (!Success)
     {
         ERR("PeLdrScanImportDescriptorTable() failed for %s\n", FullPath);
@@ -524,6 +531,7 @@ BOOLEAN
 LoadModule(
     IN OUT PLOADER_PARAMETER_BLOCK1 LoaderBlock1,
     IN PCCH Path,
+    IN PCCH ArcPath,
     IN PCCH File,
     IN PCCH ImportName, // BaseDllName
     IN TYPE_OF_MEMORY MemoryType,
@@ -532,6 +540,7 @@ LoadModule(
 {
     BOOLEAN Success;
     CHAR FullFileName[MAX_PATH];
+    CHAR ArcFileName[MAX_PATH];
     CHAR ProgressString[256];
     PVOID BaseAddress = NULL;
 
@@ -542,7 +551,10 @@ LoadModule(
     RtlStringCbCopyA(FullFileName, sizeof(FullFileName), Path);
     RtlStringCbCatA(FullFileName, sizeof(FullFileName), File);
 
-    Success = PeLdrLoadImage(FullFileName, MemoryType, &BaseAddress);
+    RtlStringCbCopyA(ArcFileName, sizeof(ArcFileName), ArcPath);
+    RtlStringCbCatA(ArcFileName, sizeof(ArcFileName), File);
+
+    Success = PeLdrLoadImage(ArcFileName, MemoryType, &BaseAddress);
     if (!Success)
     {
         TRACE("Loading %s failed\n", File);
@@ -574,17 +586,19 @@ LoadWindowsCore(IN USHORT OperatingSystemVersion,
 {
     BOOLEAN Success;
     PCSTR Options;
-    CHAR DirPath[MAX_PATH];
+    CHAR ArcPath[MAX_PATH];
     CHAR HalFileName[MAX_PATH];
     CHAR KernelFileName[MAX_PATH];
     CHAR KdTransportDllName[MAX_PATH];
     PLDR_DATA_TABLE_ENTRY HalDTE, KdComDTE = NULL;
 
+    static const CHAR DirPath[] = "\\SystemRoot\\system32\\";
+
     if (!KernelDTE) return FALSE;
 
     /* Initialize SystemRoot\System32 path */
-    RtlStringCbCopyA(DirPath, sizeof(DirPath), BootPath);
-    RtlStringCbCatA(DirPath, sizeof(DirPath), "system32\\");
+    RtlStringCbCopyA(ArcPath, sizeof(ArcPath), BootPath);
+    RtlStringCbCatA(ArcPath, sizeof(ArcPath), "system32\\");
 
     /*
      * Default HAL and KERNEL file names.
@@ -640,10 +654,10 @@ LoadWindowsCore(IN USHORT OperatingSystemVersion,
     TRACE("HAL file = '%s' ; Kernel file = '%s'\n", HalFileName, KernelFileName);
 
     /* Load the Kernel */
-    LoadModule(LoaderBlock1, DirPath, KernelFileName, "ntoskrnl.exe", LoaderSystemCode, KernelDTE, 30);
+    LoadModule(LoaderBlock1, DirPath, ArcPath, KernelFileName, "ntoskrnl.exe", LoaderSystemCode, KernelDTE, 30);
 
     /* Load the HAL */
-    LoadModule(LoaderBlock1, DirPath, HalFileName, "hal.dll", LoaderHalCode, &HalDTE, 45);
+    LoadModule(LoaderBlock1, DirPath, ArcPath, HalFileName, "hal.dll", LoaderHalCode, &HalDTE, 45);
 
     /* Load the Kernel Debugger Transport DLL */
     if (OperatingSystemVersion > _WIN32_WINNT_WIN2K)
@@ -726,16 +740,16 @@ LoadWindowsCore(IN USHORT OperatingSystemVersion,
              * Load the transport DLL. Override the base DLL name of the
              * loaded transport DLL to the default "KDCOM.DLL" name.
              */
-            LoadModule(LoaderBlock1, DirPath, KdTransportDllName, "kdcom.dll", LoaderSystemCode, &KdComDTE, 60);
+            LoadModule(LoaderBlock1, DirPath, ArcPath, KdTransportDllName, "kdcom.dll", LoaderSystemCode, &KdComDTE, 60);
         }
     }
 
     /* Load all referenced DLLs for Kernel, HAL and Kernel Debugger Transport DLL */
-    Success  = PeLdrScanImportDescriptorTable(&LoaderBlock1->LoadOrderListHead, DirPath, *KernelDTE);
-    Success &= PeLdrScanImportDescriptorTable(&LoaderBlock1->LoadOrderListHead, DirPath, HalDTE);
+    Success  = PeLdrScanImportDescriptorTable(&LoaderBlock1->LoadOrderListHead, DirPath, ArcPath, *KernelDTE);
+    Success &= PeLdrScanImportDescriptorTable(&LoaderBlock1->LoadOrderListHead, DirPath, ArcPath, HalDTE);
     if (KdComDTE)
     {
-        Success &= PeLdrScanImportDescriptorTable(&LoaderBlock1->LoadOrderListHead, DirPath, KdComDTE);
+        Success &= PeLdrScanImportDescriptorTable(&LoaderBlock1->LoadOrderListHead, DirPath, ArcPath, KdComDTE);
     }
 
     return Success;

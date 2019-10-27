@@ -81,6 +81,7 @@ static BOOLEAN
 PeLdrpLoadAndScanReferencedDll(
     IN OUT PLIST_ENTRY ModuleListHead,
     IN PCCH DirectoryPath,
+    IN PCCH ArcPath,
     IN PCH ImportName,
     IN PLIST_ENTRY Parent OPTIONAL,
     OUT PLDR_DATA_TABLE_ENTRY *DataTableEntry);
@@ -95,6 +96,7 @@ PeLdrpBindImportName(
     IN ULONG ExportSize,
     IN BOOLEAN ProcessForwards,
     IN PCSTR DirectoryPath,
+    IN PCSTR ArcPath,
     IN PLIST_ENTRY Parent)
 {
     ULONG Ordinal;
@@ -270,6 +272,7 @@ PeLdrpBindImportName(
             /* Now let's try to load it! */
             Success = PeLdrpLoadAndScanReferencedDll(ModuleListHead,
                                                      DirectoryPath,
+                                                     ArcPath,
                                                      ForwardDllName,
                                                      Parent,
                                                      &DataTableEntry);
@@ -319,6 +322,7 @@ PeLdrpBindImportName(
                                            RefExportSize,
                                            TRUE,
                                            DirectoryPath,
+                                           ArcPath,
                                            Parent);
 
             /* Fill out the ThunkData with data from RefThunkData */
@@ -342,27 +346,32 @@ static BOOLEAN
 PeLdrpLoadAndScanReferencedDll(
     IN OUT PLIST_ENTRY ModuleListHead,
     IN PCCH DirectoryPath,
+    IN PCCH ArcPath,
     IN PCH ImportName,
     IN PLIST_ENTRY Parent OPTIONAL,
     OUT PLDR_DATA_TABLE_ENTRY *DataTableEntry)
 {
+    CHAR ArcDllName[256];
     CHAR FullDllName[256];
     BOOLEAN Success;
     PVOID BasePA = NULL;
 
     /* Prepare the full path to the file to be loaded */
-    strcpy(FullDllName, DirectoryPath);
-    strcat(FullDllName, ImportName);
+    strcpy(ArcDllName, ArcPath);
+    strcat(ArcDllName, ImportName);
 
-    TRACE("Loading referenced DLL: %s\n", FullDllName);
+    TRACE("Loading referenced DLL: %s\n", ArcDllName);
 
     /* Load the image */
-    Success = PeLdrLoadImage(FullDllName, LoaderBootDriver, &BasePA);
+    Success = PeLdrLoadImage(ArcDllName, LoaderBootDriver, &BasePA);
     if (!Success)
     {
         ERR("PeLdrLoadImage() failed\n");
         return Success;
     }
+
+    strcpy(FullDllName, DirectoryPath);
+    strcat(FullDllName, ImportName);
 
     /* Allocate DTE for newly loaded DLL */
     Success = PeLdrAllocateDataTableEntry(Parent ? Parent->Blink : ModuleListHead,
@@ -381,7 +390,7 @@ PeLdrpLoadAndScanReferencedDll(
     /* Scan its dependencies too */
     TRACE("PeLdrScanImportDescriptorTable() calling ourselves for %S\n",
           VaToPa((*DataTableEntry)->BaseDllName.Buffer));
-    Success = PeLdrScanImportDescriptorTable(ModuleListHead, DirectoryPath, *DataTableEntry);
+    Success = PeLdrScanImportDescriptorTable(ModuleListHead, DirectoryPath, ArcPath, *DataTableEntry);
     if (!Success)
     {
         ERR("PeLdrScanImportDescriptorTable() failed\n");
@@ -398,6 +407,7 @@ PeLdrpScanImportAddressTable(
     IN PVOID ImageBase,
     IN PIMAGE_THUNK_DATA ThunkData,
     IN PCSTR DirectoryPath,
+    IN PCSTR ArcPath,
     IN PLIST_ENTRY Parent)
 {
     PIMAGE_EXPORT_DIRECTORY ExportDirectory = NULL;
@@ -443,6 +453,7 @@ PeLdrpScanImportAddressTable(
                                        ExportSize,
                                        FALSE,
                                        DirectoryPath,
+                                       ArcPath,
                                        Parent);
 
         /* Move to the next entry */
@@ -509,6 +520,7 @@ BOOLEAN
 PeLdrScanImportDescriptorTable(
     IN OUT PLIST_ENTRY ModuleListHead,
     IN PCCH DirectoryPath,
+    IN PCCH ArcPath,
     IN PLDR_DATA_TABLE_ENTRY ScanDTE)
 {
     PLDR_DATA_TABLE_ENTRY DataTableEntry;
@@ -552,6 +564,7 @@ PeLdrScanImportDescriptorTable(
         {
             Success = PeLdrpLoadAndScanReferencedDll(ModuleListHead,
                                                      DirectoryPath,
+                                                     ArcPath,
                                                      ImportName,
                                                      &ScanDTE->InLoadOrderLinks,
                                                      &DataTableEntry);
@@ -568,6 +581,7 @@ PeLdrScanImportDescriptorTable(
                                                ScanDTE->DllBase,
                                                (PIMAGE_THUNK_DATA)RVA(ScanDTE->DllBase, ImportTable->FirstThunk),
                                                DirectoryPath,
+                                               ArcPath,
                                                &ScanDTE->InLoadOrderLinks);
 
         if (!Success)

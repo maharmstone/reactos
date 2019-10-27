@@ -36,6 +36,7 @@ BOOLEAN
 PeLdrScanImportDescriptorTable(
     IN OUT PLIST_ENTRY ModuleListHead,
     IN PCCH DirectoryPath,
+    IN PCCH ArcPath,
     IN PLDR_DATA_TABLE_ENTRY ScanDTE);
 
 BOOLEAN

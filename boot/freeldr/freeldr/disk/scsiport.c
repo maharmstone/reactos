@@ -1666,7 +1666,7 @@ LoadBootDeviceDriver(VOID)
     }
 
     /* Fix imports */
-    Success = PeLdrScanImportDescriptorTable(&ModuleListHead, "", BootDdDTE);
+    Success = PeLdrScanImportDescriptorTable(&ModuleListHead, "", "", BootDdDTE);
 
     /* Now unlinkt the DTEs, they won't be valid later */
     RemoveEntryList(&BootDdDTE->InLoadOrderLinks);
