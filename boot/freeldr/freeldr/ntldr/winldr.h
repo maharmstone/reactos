@@ -86,10 +86,67 @@ typedef struct _LOADER_PARAMETER_BLOCK_VISTA
     LOADER_PARAMETER_BLOCK2 Block2;
 } LOADER_PARAMETER_BLOCK_VISTA, *PLOADER_PARAMETER_BLOCK_VISTA;
 
+typedef struct _LOADER_PARAMETER_EXTENSION1
+{
+    ULONG Size;
+    PROFILE_PARAMETER_BLOCK Profile;
+} LOADER_PARAMETER_EXTENSION1, *PLOADER_PARAMETER_EXTENSION1;
+
+typedef struct _LOADER_PARAMETER_EXTENSION2
+{
+    PVOID EmInfFileImage;
+    ULONG EmInfFileSize;
+    PVOID TriageDumpBlock;
+    //
+    // NT 5.1
+    //
+    ULONG_PTR LoaderPagesSpanned;   /* Not anymore present starting NT 6.2 */
+    PHEADLESS_LOADER_BLOCK HeadlessLoaderBlock;
+    PSMBIOS_TABLE_HEADER SMBiosEPSHeader;
+    PVOID DrvDBImage;
+    ULONG DrvDBSize;
+    PNETWORK_LOADER_BLOCK NetworkLoaderBlock;
+    //
+    // NT 5.2+
+    //
+#ifdef _X86_
+    PUCHAR HalpIRQLToTPR;
+    PUCHAR HalpVectorToIRQL;
+#endif
+    LIST_ENTRY FirmwareDescriptorListHead;
+    PVOID AcpiTable;
+    ULONG AcpiTableSize;
+    //
+    // NT 5.2 SP1+
+    //
+/** NT-version-dependent flags **/
+    ULONG BootViaWinload:1;
+    ULONG BootViaEFI:1;
+    ULONG Reserved:30;
+/********************************/
+    PLOADER_PERFORMANCE_DATA LoaderPerformanceData;
+    LIST_ENTRY BootApplicationPersistentData;
+    PVOID WmdTestResult;
+    GUID BootIdentifier;
+    //
+    // NT 6
+    //
+    ULONG ResumePages;
+    PVOID DumpHeader;
+} LOADER_PARAMETER_EXTENSION2, *PLOADER_PARAMETER_EXTENSION2;
+
+typedef struct _LOADER_PARAMETER_EXTENSION_VISTA
+{
+    LOADER_PARAMETER_EXTENSION1 Extension1;
+    ULONG MajorVersion;
+    ULONG MinorVersion;
+    LOADER_PARAMETER_EXTENSION2 Extension2;
+} LOADER_PARAMETER_EXTENSION_VISTA, *PLOADER_PARAMETER_EXTENSION_VISTA;
+
 typedef struct _LOADER_SYSTEM_BLOCK
 {
     LOADER_PARAMETER_BLOCK_VISTA LoaderBlock;
-    LOADER_PARAMETER_EXTENSION Extension;
+    LOADER_PARAMETER_EXTENSION_VISTA Extension;
     SETUP_LOADER_BLOCK SetupBlock;
 #ifdef _M_IX86
     HEADLESS_LOADER_BLOCK HeadlessLoaderBlock;
@@ -139,6 +196,8 @@ VOID
 WinLdrInitializePhase1(PLOADER_PARAMETER_BLOCK1 LoaderBlock1,
                        PLOADER_PARAMETER_BLOCK2 LoaderBlock2,
                        PSETUP_LOADER_BLOCK* SetupBlockPtr,
+                       PLOADER_PARAMETER_EXTENSION1 Extension1,
+                       PLOADER_PARAMETER_EXTENSION2 Extension2,
                        PCSTR Options,
                        PCSTR SystemPath,
                        PCSTR BootPath,
@@ -174,6 +233,8 @@ LoadAndBootWindowsCommon(
     PLOADER_PARAMETER_BLOCK1 LoaderBlock1,
     PLOADER_PARAMETER_BLOCK2 LoaderBlock2,
     PSETUP_LOADER_BLOCK* SetupBlockPtr,
+    PLOADER_PARAMETER_EXTENSION1 Extension1,
+    PLOADER_PARAMETER_EXTENSION2 Extension2,
     PCSTR BootOptions,
     PCSTR BootPath,
     BOOLEAN Setup);

@@ -23,7 +23,9 @@ AllocateAndInitLPB(
     OUT void** OutLoaderBlock,
     OUT PLOADER_PARAMETER_BLOCK1* OutLoaderBlock1,
     OUT PLOADER_PARAMETER_BLOCK2* OutLoaderBlock2,
-    OUT PSETUP_LOADER_BLOCK** SetupBlockPtr);
+    OUT PSETUP_LOADER_BLOCK** SetupBlockPtr,
+    OUT PLOADER_PARAMETER_EXTENSION1* OutExtension1,
+    OUT PLOADER_PARAMETER_EXTENSION2* OutExtension2);
 
 static VOID
 SetupLdrLoadNlsData(PLOADER_PARAMETER_BLOCK1 LoaderBlock1, HINF InfHandle, PCSTR SearchPath)
@@ -85,7 +87,7 @@ SetupLdrLoadNlsData(PLOADER_PARAMETER_BLOCK1 LoaderBlock1, HINF InfHandle, PCSTR
 static
 BOOLEAN
 SetupLdrInitErrataInf(
-    IN OUT PLOADER_PARAMETER_BLOCK2 LoaderBlock2,
+    IN OUT PLOADER_PARAMETER_EXTENSION2 Extension2,
     IN HINF InfHandle,
     IN PCSTR SystemRoot)
 {
@@ -118,8 +120,8 @@ SetupLdrInitErrataInf(
         return FALSE;
     }
 
-    LoaderBlock2->Extension->EmInfFileImage = PaToVa(PhysicalBase);
-    LoaderBlock2->Extension->EmInfFileSize  = FileSize;
+    Extension2->EmInfFileImage = PaToVa(PhysicalBase);
+    Extension2->EmInfFileSize  = FileSize;
 
     return TRUE;
 }
@@ -205,6 +207,8 @@ LoadReactOSSetup(
     PLOADER_PARAMETER_BLOCK2 LoaderBlock2;
     PSETUP_LOADER_BLOCK* SetupBlockPtr;
     PSETUP_LOADER_BLOCK SetupBlock;
+    PLOADER_PARAMETER_EXTENSION1 Extension1;
+    PLOADER_PARAMETER_EXTENSION2 Extension2;
     PCSTR SystemPath;
 
     static PCSTR SourcePaths[] =
@@ -361,7 +365,8 @@ LoadReactOSSetup(
 
     /* Allocate and minimally-initialize the Loader Parameter Block */
     AllocateAndInitLPB(_WIN32_WINNT_WS03, &LoaderBlock, &LoaderBlock1,
-                       &LoaderBlock2, &SetupBlockPtr);
+                       &LoaderBlock2, &SetupBlockPtr, &Extension1,
+                       &Extension2);
 
     /* Allocate and initialize setup loader block */
     SetupBlock = &WinLdrSystemBlock->SetupBlock;
@@ -385,7 +390,7 @@ LoadReactOSSetup(
     SetupLdrLoadNlsData(LoaderBlock1, InfHandle, FileName);
 
     /* Load the Firmware Errata file from the installation medium */
-    Success = SetupLdrInitErrataInf(LoaderBlock2, InfHandle, BootPath);
+    Success = SetupLdrInitErrataInf(Extension2, InfHandle, BootPath);
     TRACE("Firmware Errata file %s\n", (Success ? "loaded" : "not loaded"));
     /* Not necessarily fatal if not found - carry on going */
 
@@ -405,6 +410,8 @@ LoadReactOSSetup(
                                     LoaderBlock1,
                                     LoaderBlock2,
                                     SetupBlockPtr,
+                                    Extension1,
+                                    Extension2,
                                     BootOptions,
                                     BootPath,
                                     TRUE);

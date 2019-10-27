@@ -36,12 +36,16 @@ AllocateAndInitLPB(
     OUT void** OutLoaderBlock,
     OUT PLOADER_PARAMETER_BLOCK1* OutLoaderBlock1,
     OUT PLOADER_PARAMETER_BLOCK2* OutLoaderBlock2,
-    OUT PSETUP_LOADER_BLOCK** SetupBlockPtr)
+    OUT PSETUP_LOADER_BLOCK** SetupBlockPtr,
+    OUT PLOADER_PARAMETER_EXTENSION1* OutExtension1,
+    OUT PLOADER_PARAMETER_EXTENSION2* OutExtension2)
 {
     void* LoaderBlock;
-    PLOADER_PARAMETER_EXTENSION Extension;
+    PLOADER_PARAMETER_EXTENSION_VISTA Extension;
     PLOADER_PARAMETER_BLOCK1 LoaderBlock1;
     PLOADER_PARAMETER_BLOCK2 LoaderBlock2;
+    PLOADER_PARAMETER_EXTENSION1 Extension1;
+    PLOADER_PARAMETER_EXTENSION2 Extension2;
 
     /* Allocate and zero-init the Loader Parameter Block */
     WinLdrSystemBlock = MmAllocateMemoryWithType(sizeof(LOADER_SYSTEM_BLOCK),
@@ -63,10 +67,13 @@ AllocateAndInitLPB(
 
     /* Initialize the Loader Block Extension */
     Extension = &WinLdrSystemBlock->Extension;
-    LoaderBlock2->Extension = Extension;
-    Extension->Size = sizeof(LOADER_PARAMETER_EXTENSION);
+    LoaderBlock2->Extension = (PLOADER_PARAMETER_EXTENSION)Extension;
+    Extension->Extension1.Size = sizeof(LOADER_PARAMETER_EXTENSION_VISTA);
     Extension->MajorVersion = (VersionToBoot & 0xFF00) >> 8;
     Extension->MinorVersion = (VersionToBoot & 0xFF);
+
+    Extension1 = &Extension->Extension1;
+    Extension2 = &Extension->Extension2;
 
     /* Init three critical lists, used right away */
     InitializeListHead(&LoaderBlock1->LoadOrderListHead);
@@ -76,6 +83,8 @@ AllocateAndInitLPB(
     *OutLoaderBlock = LoaderBlock;
     *OutLoaderBlock1 = LoaderBlock1;
     *OutLoaderBlock2 = LoaderBlock2;
+    *OutExtension1 = Extension1;
+    *OutExtension2 = Extension2;
 }
 
 // Init "phase 1"
@@ -83,6 +92,8 @@ VOID
 WinLdrInitializePhase1(PLOADER_PARAMETER_BLOCK1 LoaderBlock1,
                        PLOADER_PARAMETER_BLOCK2 LoaderBlock2,
                        PSETUP_LOADER_BLOCK* SetupBlockPtr,
+                       PLOADER_PARAMETER_EXTENSION1 Extension1,
+                       PLOADER_PARAMETER_EXTENSION2 Extension2,
                        PCSTR Options,
                        PCSTR SystemRoot,
                        PCSTR BootPath,
@@ -102,7 +113,6 @@ WinLdrInitializePhase1(PLOADER_PARAMETER_BLOCK1 LoaderBlock1,
     CHAR  MiscFiles[MAX_PATH+1];
     ULONG i;
     ULONG_PTR PathSeparator;
-    PLOADER_PARAMETER_EXTENSION Extension;
 
     /* Construct SystemRoot and ArcBoot from SystemPath */
     PathSeparator = strstr(BootPath, "\\") - BootPath;
@@ -204,42 +214,40 @@ WinLdrInitializePhase1(PLOADER_PARAMETER_BLOCK1 LoaderBlock1,
     /* Convert list of boot drivers */
     List_PaToVa(&LoaderBlock1->BootDriverListHead);
 
-    Extension = LoaderBlock2->Extension;
-
     /* FIXME! HACK value for docking profile */
-    Extension->Profile.Status = 2;
+    Extension1->Profile.Status = 2;
 
     /* Check if FreeLdr detected a ACPI table */
     if (AcpiPresent)
     {
         /* Set the pointer to something for compatibility */
-        Extension->AcpiTable = (PVOID)1;
+        Extension2->AcpiTable = (PVOID)1;
         // FIXME: Extension->AcpiTableSize;
     }
 
-    Extension->BootViaWinload = 1;
+    Extension2->BootViaWinload = 1;
 
-    InitializeListHead(&Extension->BootApplicationPersistentData);
-    List_PaToVa(&Extension->BootApplicationPersistentData);
+    InitializeListHead(&Extension2->BootApplicationPersistentData);
+    List_PaToVa(&Extension2->BootApplicationPersistentData);
 
-    Extension->LoaderPerformanceData = PaToVa(&WinLdrSystemBlock->LoaderPerformanceData);
+    Extension2->LoaderPerformanceData = PaToVa(&WinLdrSystemBlock->LoaderPerformanceData);
 
 #ifdef _M_IX86
     /* Set headless block pointer */
     if (WinLdrTerminalConnected)
     {
-        Extension->HeadlessLoaderBlock = &WinLdrSystemBlock->HeadlessLoaderBlock;
-        RtlCopyMemory(Extension->HeadlessLoaderBlock,
+        Extension2->HeadlessLoaderBlock = &WinLdrSystemBlock->HeadlessLoaderBlock;
+        RtlCopyMemory(Extension2->HeadlessLoaderBlock,
                       &LoaderRedirectionInformation,
                       sizeof(HEADLESS_LOADER_BLOCK));
-        Extension->HeadlessLoaderBlock = PaToVa(Extension->HeadlessLoaderBlock);
+        Extension2->HeadlessLoaderBlock = PaToVa(Extension2->HeadlessLoaderBlock);
     }
 #endif
     /* Load drivers database */
     RtlStringCbCopyA(MiscFiles, sizeof(MiscFiles), BootPath);
     RtlStringCbCatA(MiscFiles, sizeof(MiscFiles), "AppPatch\\drvmain.sdb");
-    Extension->DrvDBImage = PaToVa(WinLdrLoadModule(MiscFiles,
-                                                    &Extension->DrvDBSize,
+    Extension2->DrvDBImage = PaToVa(WinLdrLoadModule(MiscFiles,
+                                                    &Extension2->DrvDBSize,
                                                     LoaderRegistryData));
 
     /* Convert the extension block pointer */
@@ -679,7 +687,7 @@ LoadWindowsCore(IN USHORT OperatingSystemVersion,
 static
 BOOLEAN
 WinLdrInitErrataInf(
-    IN OUT PLOADER_PARAMETER_BLOCK2 LoaderBlock2,
+    IN OUT PLOADER_PARAMETER_EXTENSION2 Extension2,
     IN USHORT OperatingSystemVersion,
     IN PCSTR SystemRoot)
 {
@@ -732,8 +740,8 @@ WinLdrInitErrataInf(
         return FALSE;
     }
 
-    LoaderBlock2->Extension->EmInfFileImage = PaToVa(PhysicalBase);
-    LoaderBlock2->Extension->EmInfFileSize  = FileSize;
+    Extension2->EmInfFileImage = PaToVa(PhysicalBase);
+    Extension2->EmInfFileSize  = FileSize;
 
     return TRUE;
 }
@@ -754,6 +762,8 @@ LoadAndBootWindows(
     PLOADER_PARAMETER_BLOCK1 LoaderBlock1;
     PLOADER_PARAMETER_BLOCK2 LoaderBlock2;
     PSETUP_LOADER_BLOCK* SetupBlockPtr;
+    PLOADER_PARAMETER_EXTENSION1 Extension1;
+    PLOADER_PARAMETER_EXTENSION2 Extension2;
     CHAR BootPath[MAX_PATH];
     CHAR FileName[MAX_PATH];
     CHAR BootOptions[256];
@@ -895,7 +905,7 @@ LoadAndBootWindows(
 
     /* Allocate and minimally-initialize the Loader Parameter Block */
     AllocateAndInitLPB(OperatingSystemVersion, &LoaderBlock, &LoaderBlock1,
-                       &LoaderBlock2, &SetupBlockPtr);
+                       &LoaderBlock2, &SetupBlockPtr, &Extension1, &Extension2);
 
     /* Load the system hive */
     UiDrawBackdrop();
@@ -909,8 +919,6 @@ LoadAndBootWindows(
     /* Fixup the version number using data from the registry */
     if (OperatingSystemVersion == 0)
         OperatingSystemVersion = WinLdrDetectVersion();
-    LoaderBlock2->Extension->MajorVersion = (OperatingSystemVersion & 0xFF00) >> 8;
-    LoaderBlock2->Extension->MinorVersion = (OperatingSystemVersion & 0xFF);
 
     /* Load NLS data, OEM font, and prepare boot drivers list */
     Success = WinLdrScanSystemHive(LoaderBlock1, BootPath);
@@ -920,7 +928,7 @@ LoadAndBootWindows(
         return ENOEXEC;
 
     /* Load the Firmware Errata file */
-    Success = WinLdrInitErrataInf(LoaderBlock2, OperatingSystemVersion, BootPath);
+    Success = WinLdrInitErrataInf(Extension2, OperatingSystemVersion, BootPath);
     TRACE("Firmware Errata file %s\n", (Success ? "loaded" : "not loaded"));
     /* Not necessarily fatal if not found - carry on going */
 
@@ -930,6 +938,8 @@ LoadAndBootWindows(
                                     LoaderBlock1,
                                     LoaderBlock2,
                                     SetupBlockPtr,
+                                    Extension1,
+                                    Extension2,
                                     BootOptions,
                                     BootPath,
                                     FALSE);
@@ -942,6 +952,8 @@ LoadAndBootWindowsCommon(
     PLOADER_PARAMETER_BLOCK1 LoaderBlock1,
     PLOADER_PARAMETER_BLOCK2 LoaderBlock2,
     PSETUP_LOADER_BLOCK* SetupBlockPtr,
+    PLOADER_PARAMETER_EXTENSION1 Extension1,
+    PLOADER_PARAMETER_EXTENSION2 Extension2,
     PCSTR BootOptions,
     PCSTR BootPath,
     BOOLEAN Setup)
@@ -994,6 +1006,8 @@ LoadAndBootWindowsCommon(
     WinLdrInitializePhase1(LoaderBlock1,
                            LoaderBlock2,
                            SetupBlockPtr,
+                           Extension1,
+                           Extension2,
                            BootOptions,
                            SystemRoot,
                            BootPath,
@@ -1019,7 +1033,7 @@ LoadAndBootWindowsCommon(
     WinLdrSetProcessorContext(OperatingSystemVersion);
 
     /* Save final value of LoaderPagesSpanned */
-    LoaderBlock2->Extension->LoaderPagesSpanned = LoaderPagesSpanned;
+    Extension2->LoaderPagesSpanned = LoaderPagesSpanned;
 
     TRACE("Hello from paged mode, KiSystemStartup %p, LoaderBlockVA %p!\n",
           KiSystemStartup, LoaderBlockVA);
