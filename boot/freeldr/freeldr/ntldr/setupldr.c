@@ -20,10 +20,13 @@ DBG_DEFAULT_CHANNEL(WINDOWS);
 VOID
 AllocateAndInitLPB(
     IN USHORT VersionToBoot,
-    OUT PLOADER_PARAMETER_BLOCK* OutLoaderBlock);
+    OUT void** OutLoaderBlock,
+    OUT PLOADER_PARAMETER_BLOCK1* OutLoaderBlock1,
+    OUT PLOADER_PARAMETER_BLOCK2* OutLoaderBlock2,
+    OUT PSETUP_LOADER_BLOCK** SetupBlockPtr);
 
 static VOID
-SetupLdrLoadNlsData(PLOADER_PARAMETER_BLOCK LoaderBlock, HINF InfHandle, PCSTR SearchPath)
+SetupLdrLoadNlsData(PLOADER_PARAMETER_BLOCK1 LoaderBlock1, HINF InfHandle, PCSTR SearchPath)
 {
     INFCONTEXT InfContext;
     PCSTR AnsiName, OemName, LangName;
@@ -67,12 +70,12 @@ SetupLdrLoadNlsData(PLOADER_PARAMETER_BLOCK LoaderBlock, HINF InfHandle, PCSTR S
 
 #if DBG
     {
-        BOOLEAN Success = WinLdrLoadNLSData(LoaderBlock, SearchPath, AnsiName, OemName, LangName);
+        BOOLEAN Success = WinLdrLoadNLSData(LoaderBlock1, SearchPath, AnsiName, OemName, LangName);
         (VOID)Success;
         TRACE("NLS data loading %s\n", Success ? "successful" : "failed");
     }
 #else
-    WinLdrLoadNLSData(LoaderBlock, SearchPath, AnsiName, OemName, LangName);
+    WinLdrLoadNLSData(LoaderBlock1, SearchPath, AnsiName, OemName, LangName);
 #endif
 
     /* TODO: Load OEM HAL font */
@@ -82,7 +85,7 @@ SetupLdrLoadNlsData(PLOADER_PARAMETER_BLOCK LoaderBlock, HINF InfHandle, PCSTR S
 static
 BOOLEAN
 SetupLdrInitErrataInf(
-    IN OUT PLOADER_PARAMETER_BLOCK LoaderBlock,
+    IN OUT PLOADER_PARAMETER_BLOCK2 LoaderBlock2,
     IN HINF InfHandle,
     IN PCSTR SystemRoot)
 {
@@ -115,8 +118,8 @@ SetupLdrInitErrataInf(
         return FALSE;
     }
 
-    LoaderBlock->Extension->EmInfFileImage = PaToVa(PhysicalBase);
-    LoaderBlock->Extension->EmInfFileSize  = FileSize;
+    LoaderBlock2->Extension->EmInfFileImage = PaToVa(PhysicalBase);
+    LoaderBlock2->Extension->EmInfFileSize  = FileSize;
 
     return TRUE;
 }
@@ -197,7 +200,10 @@ LoadReactOSSetup(
     ULONG i, ErrorLine;
     HINF InfHandle;
     INFCONTEXT InfContext;
-    PLOADER_PARAMETER_BLOCK LoaderBlock;
+    void* LoaderBlock;
+    PLOADER_PARAMETER_BLOCK1 LoaderBlock1;
+    PLOADER_PARAMETER_BLOCK2 LoaderBlock2;
+    PSETUP_LOADER_BLOCK* SetupBlockPtr;
     PSETUP_LOADER_BLOCK SetupBlock;
     PCSTR SystemPath;
 
@@ -354,11 +360,12 @@ LoadReactOSSetup(
     TRACE("BootOptions: '%s'\n", BootOptions);
 
     /* Allocate and minimally-initialize the Loader Parameter Block */
-    AllocateAndInitLPB(_WIN32_WINNT_WS03, &LoaderBlock);
+    AllocateAndInitLPB(_WIN32_WINNT_WS03, &LoaderBlock, &LoaderBlock1,
+                       &LoaderBlock2, &SetupBlockPtr);
 
     /* Allocate and initialize setup loader block */
     SetupBlock = &WinLdrSystemBlock->SetupBlock;
-    LoaderBlock->SetupLdrBlock = SetupBlock;
+    *SetupBlockPtr = SetupBlock;
 
     /* Set textmode setup flag */
     SetupBlock->Flags = SETUPLDR_TEXT_MODE;
@@ -366,7 +373,7 @@ LoadReactOSSetup(
     /* Load the system hive "setupreg.hiv" for setup */
     UiDrawBackdrop();
     UiDrawProgressBarCenter(15, 100, "Loading setup system hive...");
-    Success = WinLdrInitSystemHive(LoaderBlock, BootPath, TRUE);
+    Success = WinLdrInitSystemHive(LoaderBlock1, BootPath, TRUE);
     TRACE("Setup SYSTEM hive %s\n", (Success ? "loaded" : "not loaded"));
     /* Bail out if failure */
     if (!Success)
@@ -375,17 +382,17 @@ LoadReactOSSetup(
     /* Load NLS data, they are in the System32 directory of the installation medium */
     RtlStringCbCopyA(FileName, sizeof(FileName), BootPath);
     RtlStringCbCatA(FileName, sizeof(FileName), "system32\\");
-    SetupLdrLoadNlsData(LoaderBlock, InfHandle, FileName);
+    SetupLdrLoadNlsData(LoaderBlock1, InfHandle, FileName);
 
     /* Load the Firmware Errata file from the installation medium */
-    Success = SetupLdrInitErrataInf(LoaderBlock, InfHandle, BootPath);
+    Success = SetupLdrInitErrataInf(LoaderBlock2, InfHandle, BootPath);
     TRACE("Firmware Errata file %s\n", (Success ? "loaded" : "not loaded"));
     /* Not necessarily fatal if not found - carry on going */
 
     // UiDrawStatusText("Press F6 if you need to install a 3rd-party SCSI or RAID driver...");
 
     /* Get a list of boot drivers */
-    SetupLdrScanBootDrivers(&LoaderBlock->BootDriverListHead, InfHandle, BootPath);
+    SetupLdrScanBootDrivers(&LoaderBlock1->BootDriverListHead, InfHandle, BootPath);
 
     /* Close the inf file */
     InfCloseFile(InfHandle);
@@ -395,6 +402,9 @@ LoadReactOSSetup(
     /* Load ReactOS Setup */
     return LoadAndBootWindowsCommon(_WIN32_WINNT_WS03,
                                     LoaderBlock,
+                                    LoaderBlock1,
+                                    LoaderBlock2,
+                                    SetupBlockPtr,
                                     BootOptions,
                                     BootPath,
                                     TRUE);

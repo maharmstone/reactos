@@ -32,7 +32,7 @@ WinLdrScanRegistry(IN OUT PLIST_ENTRY BootDriverListHead,
 
 static BOOLEAN
 WinLdrLoadSystemHive(
-    IN OUT PLOADER_PARAMETER_BLOCK LoaderBlock,
+    IN OUT PLOADER_PARAMETER_BLOCK1 LoaderBlock1,
     IN PCSTR DirectoryPath,
     IN PCSTR HiveName)
 {
@@ -84,8 +84,8 @@ WinLdrLoadSystemHive(
     HiveDataVirtual = PaToVa(HiveDataPhysical);
 
     /* Fill LoaderBlock's entries */
-    LoaderBlock->RegistryLength = HiveFileSize;
-    LoaderBlock->RegistryBase = HiveDataVirtual;
+    LoaderBlock1->RegistryLength = HiveFileSize;
+    LoaderBlock1->RegistryBase = HiveDataVirtual;
 
     /* Finally read from file to the memory */
     Status = ArcRead(FileId, HiveDataPhysical, HiveFileSize, &BytesRead);
@@ -103,7 +103,7 @@ WinLdrLoadSystemHive(
     {
         BOOLEAN Success;
         TRACE("  Adding filesystem service %S\n", FsService);
-        Success = WinLdrAddDriverToList(&LoaderBlock->BootDriverListHead,
+        Success = WinLdrAddDriverToList(&LoaderBlock1->BootDriverListHead,
                                         L"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\",
                                         NULL,
                                         (PWSTR)FsService,
@@ -124,7 +124,7 @@ WinLdrLoadSystemHive(
 
 BOOLEAN
 WinLdrInitSystemHive(
-    IN OUT PLOADER_PARAMETER_BLOCK LoaderBlock,
+    IN OUT PLOADER_PARAMETER_BLOCK1 LoaderBlock1,
     IN PCSTR SystemRoot,
     IN BOOLEAN Setup)
 {
@@ -149,14 +149,14 @@ WinLdrInitSystemHive(
     }
 
     TRACE("WinLdrInitSystemHive: loading hive %s%s\n", SearchPath, HiveName);
-    Success = WinLdrLoadSystemHive(LoaderBlock, SearchPath, HiveName);
+    Success = WinLdrLoadSystemHive(LoaderBlock1, SearchPath, HiveName);
 
     /* Fail if failed... */
     if (!Success)
         return FALSE;
 
     /* Import what was loaded */
-    Success = RegImportBinaryHive(VaToPa(LoaderBlock->RegistryBase), LoaderBlock->RegistryLength);
+    Success = RegImportBinaryHive(VaToPa(LoaderBlock1->RegistryBase), LoaderBlock1->RegistryLength);
     if (!Success)
     {
         UiMessageBox("Importing binary hive failed!");
@@ -173,7 +173,7 @@ WinLdrInitSystemHive(
     return TRUE;
 }
 
-BOOLEAN WinLdrScanSystemHive(IN OUT PLOADER_PARAMETER_BLOCK LoaderBlock,
+BOOLEAN WinLdrScanSystemHive(IN OUT PLOADER_PARAMETER_BLOCK1 LoaderBlock1,
                              IN PCSTR SystemRoot)
 {
     CHAR SearchPath[1024];
@@ -181,7 +181,7 @@ BOOLEAN WinLdrScanSystemHive(IN OUT PLOADER_PARAMETER_BLOCK LoaderBlock,
     BOOLEAN Success;
 
     /* Scan registry and prepare boot drivers list */
-    WinLdrScanRegistry(&LoaderBlock->BootDriverListHead, SystemRoot);
+    WinLdrScanRegistry(&LoaderBlock1->BootDriverListHead, SystemRoot);
 
     /* Get names of NLS files */
     Success = WinLdrGetNLSNames(AnsiName, OemName, LangName);
@@ -196,7 +196,7 @@ BOOLEAN WinLdrScanSystemHive(IN OUT PLOADER_PARAMETER_BLOCK LoaderBlock,
     /* Load NLS data */
     RtlStringCbCopyA(SearchPath, sizeof(SearchPath), SystemRoot);
     RtlStringCbCatA(SearchPath, sizeof(SearchPath), "system32\\");
-    Success = WinLdrLoadNLSData(LoaderBlock, SearchPath, AnsiName, OemName, LangName);
+    Success = WinLdrLoadNLSData(LoaderBlock1, SearchPath, AnsiName, OemName, LangName);
     TRACE("NLS data loading %s\n", Success ? "successful" : "failed");
 
     /* TODO: Load OEM HAL font */
@@ -301,7 +301,7 @@ WinLdrGetNLSNames(PSTR AnsiName,
 }
 
 BOOLEAN
-WinLdrLoadNLSData(IN OUT PLOADER_PARAMETER_BLOCK LoaderBlock,
+WinLdrLoadNLSData(IN OUT PLOADER_PARAMETER_BLOCK1 LoaderBlock1,
                   IN PCSTR DirectoryPath,
                   IN PCSTR AnsiFileName,
                   IN PCSTR OemFileName,
@@ -396,16 +396,16 @@ WinLdrLoadNLSData(IN OUT PLOADER_PARAMETER_BLOCK LoaderBlock,
         goto Failure;
 
     NlsVirtual = PaToVa(NlsDataBase);
-    LoaderBlock->NlsData->AnsiCodePageData = NlsVirtual;
-    LoaderBlock->NlsData->OemCodePageData = (PVOID)((ULONG_PTR)NlsVirtual +
+    LoaderBlock1->NlsData->AnsiCodePageData = NlsVirtual;
+    LoaderBlock1->NlsData->OemCodePageData = (PVOID)((ULONG_PTR)NlsVirtual +
         (MM_SIZE_TO_PAGES(AnsiFileSize) << MM_PAGE_SHIFT));
-    LoaderBlock->NlsData->UnicodeCodePageData = (PVOID)((ULONG_PTR)NlsVirtual +
+    LoaderBlock1->NlsData->UnicodeCodePageData = (PVOID)((ULONG_PTR)NlsVirtual +
         (MM_SIZE_TO_PAGES(AnsiFileSize) << MM_PAGE_SHIFT) +
         (MM_SIZE_TO_PAGES(OemFileSize)  << MM_PAGE_SHIFT));
 
     /* Ansi and OEM data are the same - just set pointers to the same area */
     if (AnsiEqualsOem)
-        LoaderBlock->NlsData->OemCodePageData = LoaderBlock->NlsData->AnsiCodePageData;
+        LoaderBlock1->NlsData->OemCodePageData = LoaderBlock1->NlsData->AnsiCodePageData;
 
     /* Now actually read the data into memory, starting with Ansi file */
     RtlStringCbCopyA(FileName, sizeof(FileName), DirectoryPath);
@@ -417,7 +417,7 @@ WinLdrLoadNLSData(IN OUT PLOADER_PARAMETER_BLOCK LoaderBlock,
         goto Failure;
     }
 
-    Status = ArcRead(FileId, VaToPa(LoaderBlock->NlsData->AnsiCodePageData), AnsiFileSize, &BytesRead);
+    Status = ArcRead(FileId, VaToPa(LoaderBlock1->NlsData->AnsiCodePageData), AnsiFileSize, &BytesRead);
     ArcClose(FileId);
     if (Status != ESUCCESS)
     {
@@ -437,7 +437,7 @@ WinLdrLoadNLSData(IN OUT PLOADER_PARAMETER_BLOCK LoaderBlock,
             goto Failure;
         }
 
-        Status = ArcRead(FileId, VaToPa(LoaderBlock->NlsData->OemCodePageData), OemFileSize, &BytesRead);
+        Status = ArcRead(FileId, VaToPa(LoaderBlock1->NlsData->OemCodePageData), OemFileSize, &BytesRead);
         ArcClose(FileId);
         if (Status != ESUCCESS)
         {
@@ -456,7 +456,7 @@ WinLdrLoadNLSData(IN OUT PLOADER_PARAMETER_BLOCK LoaderBlock,
         goto Failure;
     }
 
-    Status = ArcRead(FileId, VaToPa(LoaderBlock->NlsData->UnicodeCodePageData), LanguageFileSize, &BytesRead);
+    Status = ArcRead(FileId, VaToPa(LoaderBlock1->NlsData->UnicodeCodePageData), LanguageFileSize, &BytesRead);
     ArcClose(FileId);
     if (Status != ESUCCESS)
     {
@@ -468,10 +468,10 @@ WinLdrLoadNLSData(IN OUT PLOADER_PARAMETER_BLOCK LoaderBlock,
     // THIS IS HAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACK
     // Should go to WinLdrLoadOemHalFont(), when it will be implemented
     //
-    LoaderBlock->OemFontFile = VaToPa(LoaderBlock->NlsData->UnicodeCodePageData);
+    LoaderBlock1->OemFontFile = VaToPa(LoaderBlock1->NlsData->UnicodeCodePageData);
 
     /* Convert NlsTables address to VA */
-    LoaderBlock->NlsData = PaToVa(LoaderBlock->NlsData);
+    LoaderBlock1->NlsData = PaToVa(LoaderBlock1->NlsData);
 
     return TRUE;
 

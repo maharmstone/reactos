@@ -376,14 +376,14 @@ WinLdrSetProcessorContext(USHORT OperatingSystemVersion)
     TRACE("leave WinLdrSetProcessorContext\n");
 }
 
-void WinLdrSetupMachineDependent(PLOADER_PARAMETER_BLOCK LoaderBlock)
+void WinLdrSetupMachineDependent(PLOADER_PARAMETER_BLOCK2 LoaderBlock2)
 {
     ULONG_PTR Pcr = 0;
     ULONG_PTR Tss = 0;
     ULONG BlockSize, NumPages;
 
-    LoaderBlock->u.I386.CommonDataArea = (PVOID)DbgPrint; // HACK
-    LoaderBlock->u.I386.MachineType = MACHINE_TYPE_ISA;
+    LoaderBlock2->u.I386.CommonDataArea = (PVOID)DbgPrint; // HACK
+    LoaderBlock2->u.I386.MachineType = MACHINE_TYPE_ISA;
 
     /* Allocate 2 pages for PCR */
     Pcr = (ULONG_PTR)MmAllocateMemoryWithType(2 * MM_PAGE_SIZE, LoaderStartupPcrPage);

@@ -164,7 +164,8 @@ WinLdrMapSpecialPages(ULONG PcrBasePage)
 }
 
 VOID
-WinLdrSetupForNt(IN PLOADER_PARAMETER_BLOCK LoaderBlock,
+WinLdrSetupForNt(IN PLOADER_PARAMETER_BLOCK1 LoaderBlock1,
+                 IN PLOADER_PARAMETER_BLOCK2 LoaderBlock2,
                  IN PVOID *GdtIdt,
                  IN PULONG PcrBasePage,
                  IN PULONG TssBasePage)
@@ -172,25 +173,25 @@ WinLdrSetupForNt(IN PLOADER_PARAMETER_BLOCK LoaderBlock,
     PKPDR_PAGE PdrPage = (PVOID)0xFFD00000;
 
     /* Load cache information */
-    LoaderBlock->u.Arm.FirstLevelDcacheSize = FirstLevelDcacheSize;
-    LoaderBlock->u.Arm.FirstLevelDcacheFillSize = FirstLevelDcacheFillSize;
-    LoaderBlock->u.Arm.FirstLevelIcacheSize = FirstLevelIcacheSize;
-    LoaderBlock->u.Arm.FirstLevelIcacheFillSize = FirstLevelIcacheFillSize;
-    LoaderBlock->u.Arm.SecondLevelDcacheSize = SecondLevelDcacheSize;
-    LoaderBlock->u.Arm.SecondLevelDcacheFillSize = SecondLevelDcacheFillSize;
-    LoaderBlock->u.Arm.SecondLevelIcacheSize = SecondLevelIcacheSize;
-    LoaderBlock->u.Arm.SecondLevelIcacheFillSize = SecondLevelIcacheSize;
+    LoaderBlock2->u.Arm.FirstLevelDcacheSize = FirstLevelDcacheSize;
+    LoaderBlock2->u.Arm.FirstLevelDcacheFillSize = FirstLevelDcacheFillSize;
+    LoaderBlock2->u.Arm.FirstLevelIcacheSize = FirstLevelIcacheSize;
+    LoaderBlock2->u.Arm.FirstLevelIcacheFillSize = FirstLevelIcacheFillSize;
+    LoaderBlock2->u.Arm.SecondLevelDcacheSize = SecondLevelDcacheSize;
+    LoaderBlock2->u.Arm.SecondLevelDcacheFillSize = SecondLevelDcacheFillSize;
+    LoaderBlock2->u.Arm.SecondLevelIcacheSize = SecondLevelIcacheSize;
+    LoaderBlock2->u.Arm.SecondLevelIcacheFillSize = SecondLevelIcacheSize;
 
     /* Write initial context information */
-    LoaderBlock->KernelStack = (ULONG_PTR)PdrPage->KernelStack;
-    LoaderBlock->KernelStack += KERNEL_STACK_SIZE;
-    LoaderBlock->u.Arm.PanicStack = (ULONG_PTR)PdrPage->PanicStack;
-    LoaderBlock->u.Arm.PanicStack += KERNEL_STACK_SIZE;
-    LoaderBlock->u.Arm.InterruptStack = (ULONG_PTR)PdrPage->InterruptStack;
-    LoaderBlock->u.Arm.InterruptStack += KERNEL_STACK_SIZE;
-    LoaderBlock->Prcb = (ULONG_PTR)PdrPage->Prcb;
-    LoaderBlock->Process = (ULONG_PTR)PdrPage->InitialProcess;
-    LoaderBlock->Thread = (ULONG_PTR)PdrPage->InitialThread;
+    LoaderBlock1->KernelStack = (ULONG_PTR)PdrPage->KernelStack;
+    LoaderBlock1->KernelStack += KERNEL_STACK_SIZE;
+    LoaderBlock2->u.Arm.PanicStack = (ULONG_PTR)PdrPage->PanicStack;
+    LoaderBlock2->u.Arm.PanicStack += KERNEL_STACK_SIZE;
+    LoaderBlock2->u.Arm.InterruptStack = (ULONG_PTR)PdrPage->InterruptStack;
+    LoaderBlock2->u.Arm.InterruptStack += KERNEL_STACK_SIZE;
+    LoaderBlock1->Prcb = (ULONG_PTR)PdrPage->Prcb;
+    LoaderBlock1->Process = (ULONG_PTR)PdrPage->InitialProcess;
+    LoaderBlock1->Thread = (ULONG_PTR)PdrPage->InitialThread;
 }
 
 static
@@ -277,6 +278,6 @@ WinLdrSetProcessorContext(USHORT OperatingSystemVersion)
 
 VOID
 WinLdrSetupMachineDependent(
-    PLOADER_PARAMETER_BLOCK LoaderBlock)
+    PLOADER_PARAMETER_BLOCK2 LoaderBlock2)
 {
 }
