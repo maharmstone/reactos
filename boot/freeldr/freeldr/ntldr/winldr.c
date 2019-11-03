@@ -26,6 +26,9 @@ extern void WinLdrSetupEms(IN PCHAR BootOptions);
 
 PLOADER_SYSTEM_BLOCK WinLdrSystemBlock;
 
+#define RT_VERSION 0x10
+#define VS_FFI_SIGNATURE 0xfeef04bd
+
 // debug stuff
 VOID DumpMemoryAllocMap(VOID);
 
@@ -507,23 +510,204 @@ WinLdrLoadModule(PCSTR ModuleName,
     return PhysicalBase;
 }
 
-USHORT
-WinLdrDetectVersion(VOID)
-{
-    LONG rc;
-    HKEY hKey;
+typedef struct _VS_FIXEDFILEINFO {
+    ULONG dwSignature;
+    ULONG dwStrucVersion;
+    ULONG dwFileVersionMS;
+    ULONG dwFileVersionLS;
+    ULONG dwProductVersionMS;
+    ULONG dwProductVersionLS;
+    ULONG dwFileFlagsMask;
+    ULONG dwFileFlags;
+    ULONG dwFileOS;
+    ULONG dwFileType;
+    ULONG dwFileSubtype;
+    ULONG dwFileDateMS;
+    ULONG dwFileDateLS;
+} VS_FIXEDFILEINFO, *PVS_FIXEDFILEINFO;
 
-    rc = RegOpenKey(NULL,
-                    L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control\\Terminal Server",
-                    &hKey);
-    if (rc != ERROR_SUCCESS)
+typedef struct _VS_VERSION_INFO
+{
+    USHORT wLength;
+    USHORT wValueLength;
+    USHORT wType;
+    WCHAR szKey[15];
+    USHORT Padding1;
+    VS_FIXEDFILEINFO Value;
+} VS_VERSION_INFO, *PVS_VERSION_INFO;
+
+static USHORT WinLdrParseVersionBlock(PIMAGE_RESOURCE_DIRECTORY_ENTRY DirEntry,
+                                      PVOID ImageAddress,
+                                      ULONG ImageSize,
+                                      PVOID SectionAddress,
+                                      ULONG SectionSize)
+{
+    PIMAGE_RESOURCE_DATA_ENTRY DataEntry;
+    PVS_VERSION_INFO Data;
+
+    static const WCHAR Key[] = L"VS_VERSION_INFO";
+
+    if (DirEntry->OffsetToDirectory > SectionSize)
+        return 0;
+
+    if (DirEntry->OffsetToDirectory + sizeof(IMAGE_RESOURCE_DATA_ENTRY) > SectionSize)
+        return 0;
+
+    DataEntry = (PIMAGE_RESOURCE_DATA_ENTRY)((char*)SectionAddress + DirEntry->OffsetToDirectory);
+
+    if (DataEntry->OffsetToData + DataEntry->Size > ImageSize)
+        return 0;
+
+    if (DataEntry->Size < sizeof(VS_VERSION_INFO))
+        return 0;
+
+    Data = (PVS_VERSION_INFO)((char*)ImageAddress + DataEntry->OffsetToData);
+
+    if (Data->wLength > DataEntry->Size)
+        return 0;
+
+    if (Data->wValueLength < sizeof(VS_FIXEDFILEINFO))
+        return 0;
+
+    if (memcmp(Data->szKey, Key, sizeof(Key)))
+        return 0;
+
+    if (Data->Value.dwSignature != VS_FFI_SIGNATURE)
+        return 0;
+
+    TRACE("version %08x\n", Data->Value.dwFileVersionMS);
+
+    return (Data->Value.dwFileVersionMS & 0xff0000) >> 8 | (Data->Value.dwFileVersionMS & 0xff);
+}
+
+static
+USHORT
+WinLdrSearchRsrcVersions(PIMAGE_RESOURCE_DIRECTORY_ENTRY DirEntry,
+                         PVOID ImageAddress,
+                         ULONG ImageSize,
+                         PVOID SectionAddress,
+                         ULONG SectionSize,
+                         BOOLEAN NameDir)
+{
+    PIMAGE_RESOURCE_DIRECTORY RsrcDir;
+    PIMAGE_RESOURCE_DIRECTORY_ENTRY DirEntries;
+    ULONG i;
+
+    if (DirEntry->OffsetToDirectory > SectionSize)
+        return 0;
+
+    if (DirEntry->OffsetToDirectory + sizeof(IMAGE_RESOURCE_DIRECTORY) > SectionSize)
+        return 0;
+
+    RsrcDir = (PIMAGE_RESOURCE_DIRECTORY)((char*)SectionAddress + DirEntry->OffsetToDirectory);
+
+    if (DirEntry->OffsetToDirectory + sizeof(IMAGE_RESOURCE_DIRECTORY) +
+        ((RsrcDir->NumberOfNamedEntries + RsrcDir->NumberOfIdEntries) * sizeof(IMAGE_RESOURCE_DIRECTORY_ENTRY)) > SectionSize)
+        return 0;
+
+    DirEntries = (PIMAGE_RESOURCE_DIRECTORY_ENTRY)((char*)SectionAddress +
+                                                   DirEntry->OffsetToDirectory +
+                                                   sizeof(IMAGE_RESOURCE_DIRECTORY));
+
+    for (i = 0; i < RsrcDir->NumberOfNamedEntries + RsrcDir->NumberOfIdEntries; i++)
     {
-        /* Key doesn't exist; assume NT 4.0 */
-        return _WIN32_WINNT_NT4;
+        ULONG Version;
+
+        if (NameDir)
+            Version = WinLdrSearchRsrcVersions(&DirEntries[i], ImageAddress, ImageSize,
+                                               SectionAddress, SectionSize, FALSE);
+        else
+            Version = WinLdrParseVersionBlock(&DirEntries[i], ImageAddress, ImageSize,
+                                              SectionAddress, SectionSize);
+
+        if (Version != 0)
+            return Version;
     }
 
-    /* We may here want to read the value of ProductVersion */
-    return _WIN32_WINNT_WS03;
+    return 0;
+}
+
+static
+USHORT
+WinLdrFindKernelVersion(PVOID ImageAddress,
+                        ULONG ImageSize,
+                        PVOID SectionAddress,
+                        ULONG SectionSize)
+{
+    PIMAGE_RESOURCE_DIRECTORY RsrcDir;
+    PIMAGE_RESOURCE_DIRECTORY_ENTRY DirEntries;
+    ULONG i;
+
+    if (SectionSize < sizeof(IMAGE_RESOURCE_DIRECTORY))
+        return 0;
+
+    RsrcDir = SectionAddress;
+
+    if (SectionSize < sizeof(IMAGE_RESOURCE_DIRECTORY) +
+        ((RsrcDir->NumberOfNamedEntries + RsrcDir->NumberOfIdEntries) * sizeof(IMAGE_RESOURCE_DIRECTORY_ENTRY)))
+        return 0;
+
+    DirEntries = (PIMAGE_RESOURCE_DIRECTORY_ENTRY)((char*)SectionAddress + sizeof(IMAGE_RESOURCE_DIRECTORY));
+
+    for (i = 0; i < RsrcDir->NumberOfIdEntries; i++)
+    {
+        if (DirEntries[RsrcDir->NumberOfNamedEntries + i].Id == RT_VERSION)
+        {
+            ULONG Version;
+
+            Version = WinLdrSearchRsrcVersions(&DirEntries[RsrcDir->NumberOfNamedEntries + i],
+                                               ImageAddress,
+                                               ImageSize,
+                                               SectionAddress,
+                                               SectionSize,
+                                               TRUE);
+
+            if (Version != 0)
+                return Version;
+        }
+    }
+
+    return 0;
+}
+
+USHORT
+WinLdrDetectVersion(PVOID KernelAddress)
+{
+    PIMAGE_NT_HEADERS NtHeaders;
+    PIMAGE_SECTION_HEADER SectionHeader;
+    ULONG i, NumberOfSections;
+
+    NtHeaders = RtlImageNtHeader(KernelAddress);
+    if (!NtHeaders)
+    {
+        ERR("No NT header found in kernel\n");
+        UiMessageBox("Error: No NT header found in kernel\n");
+        return 0;
+    }
+
+    NumberOfSections = NtHeaders->FileHeader.NumberOfSections;
+    SectionHeader = IMAGE_FIRST_SECTION(NtHeaders);
+
+    /* Look for resource sections in kernel */
+    for (i = 0; i < NumberOfSections; i++)
+    {
+        if (!strcmp((char*)SectionHeader->Name, ".rsrc"))
+        {
+            USHORT Version;
+
+            Version = WinLdrFindKernelVersion(KernelAddress,
+                                              NtHeaders->OptionalHeader.SizeOfImage,
+                                              (char*)KernelAddress + SectionHeader->VirtualAddress,
+                                              SectionHeader->Misc.VirtualSize);
+
+            if (Version != 0)
+                return Version;
+        }
+
+        SectionHeader++;
+    }
+
+    return 0;
 }
 
 static
@@ -901,38 +1085,6 @@ LoadAndBootWindows(
     CHAR BootOptions[256];
     PVOID KernelAddress;
 
-    /* Retrieve the (mandatory) boot type */
-    ArgValue = GetArgumentValue(Argc, Argv, "BootType");
-    if (!ArgValue || !*ArgValue)
-    {
-        ERR("No 'BootType' value, aborting!\n");
-        return EINVAL;
-    }
-
-    /* Convert it to an OS version */
-    if (_stricmp(ArgValue, "Windows") == 0 ||
-        _stricmp(ArgValue, "Windows2003") == 0)
-    {
-        OperatingSystemVersion = _WIN32_WINNT_WS03;
-    }
-    else if (_stricmp(ArgValue, "WindowsNT40") == 0)
-    {
-        OperatingSystemVersion = _WIN32_WINNT_NT4;
-    }
-    else if (_stricmp(ArgValue, "WindowsVista") == 0)
-    {
-        OperatingSystemVersion = _WIN32_WINNT_VISTA;
-    }
-    else if (_stricmp(ArgValue, "Windows7") == 0)
-    {
-        OperatingSystemVersion = _WIN32_WINNT_WIN7;
-    }
-    else
-    {
-        ERR("Unknown 'BootType' value '%s', aborting!\n", ArgValue);
-        return EINVAL;
-    }
-
     /* Retrieve the (mandatory) system partition */
     SystemPartition = GetArgumentValue(Argc, Argv, "SystemPartition");
     if (!SystemPartition || !*SystemPartition)
@@ -1046,9 +1198,13 @@ LoadAndBootWindows(
         return EINVAL;
     }
 
-    /* Fixup the version number using data from the registry */
+    /* Find the version number from the kernel */
+    OperatingSystemVersion = WinLdrDetectVersion(KernelAddress);
     if (OperatingSystemVersion == 0)
-        OperatingSystemVersion = WinLdrDetectVersion();
+    {
+        UiMessageBox("Could not detect kernel version");
+        return EINVAL;
+    }
 
     /* Allocate and minimally-initialize the Loader Parameter Block */
     AllocateAndInitLPB(OperatingSystemVersion, &LoaderBlock, &LoaderBlock1,
