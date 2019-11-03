@@ -978,6 +978,10 @@ LoadAndBootWindows(
     /* Let user know we started loading */
     //UiDrawStatusText("Loading...");
 
+    /* Fixup the version number using data from the registry */
+    if (OperatingSystemVersion == 0)
+        OperatingSystemVersion = WinLdrDetectVersion();
+
     /* Allocate and minimally-initialize the Loader Parameter Block */
     AllocateAndInitLPB(OperatingSystemVersion, &LoaderBlock, &LoaderBlock1,
                        &LoaderBlock2, &SetupBlockPtr, &Extension1, &Extension2);
@@ -990,10 +994,6 @@ LoadAndBootWindows(
     /* Bail out if failure */
     if (!Success)
         return ENOEXEC;
-
-    /* Fixup the version number using data from the registry */
-    if (OperatingSystemVersion == 0)
-        OperatingSystemVersion = WinLdrDetectVersion();
 
     /* Load NLS data, OEM font, and prepare boot drivers list */
     Success = WinLdrScanSystemHive(LoaderBlock1, BootPath);
