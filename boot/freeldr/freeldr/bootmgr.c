@@ -65,8 +65,6 @@ static const struct
 #endif
     {"Windows"     , EditCustomBootNTOS , LoadAndBootWindows},
     {"Windows2003" , EditCustomBootNTOS , LoadAndBootWindows},
-    {"WindowsVista", EditCustomBootNTOS , LoadAndBootWindows},
-    {"Windows7"    , EditCustomBootNTOS , LoadAndBootWindows},
 };
 
 /* FUNCTIONS ******************************************************************/
