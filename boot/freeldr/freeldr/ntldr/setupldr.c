@@ -210,6 +210,7 @@ LoadReactOSSetup(
     PLOADER_PARAMETER_EXTENSION1 Extension1;
     PLOADER_PARAMETER_EXTENSION2 Extension2;
     PCSTR SystemPath;
+    PVOID KernelAddress;
 
     static PCSTR SourcePaths[] =
     {
@@ -363,6 +364,12 @@ LoadReactOSSetup(
 
     TRACE("BootOptions: '%s'\n", BootOptions);
 
+    if (!LoadKernel(BootOptions, BootPath, &KernelAddress))
+    {
+        UiMessageBox("Failed to load kernel");
+        return EINVAL;
+    }
+
     /* Allocate and minimally-initialize the Loader Parameter Block */
     AllocateAndInitLPB(_WIN32_WINNT_WS03, &LoaderBlock, &LoaderBlock1,
                        &LoaderBlock2, &SetupBlockPtr, &Extension1,
@@ -414,5 +421,6 @@ LoadReactOSSetup(
                                     Extension2,
                                     BootOptions,
                                     BootPath,
-                                    TRUE);
+                                    TRUE,
+                                    KernelAddress);
 }

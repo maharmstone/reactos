@@ -536,13 +536,13 @@ LoadModule(
     IN PCCH ImportName, // BaseDllName
     IN TYPE_OF_MEMORY MemoryType,
     OUT PLDR_DATA_TABLE_ENTRY *Dte,
-    IN ULONG Percentage)
+    IN ULONG Percentage,
+    IN PVOID BaseAddress)
 {
     BOOLEAN Success;
     CHAR FullFileName[MAX_PATH];
     CHAR ArcFileName[MAX_PATH];
     CHAR ProgressString[256];
-    PVOID BaseAddress = NULL;
 
     UiDrawBackdrop();
     RtlStringCbPrintfA(ProgressString, sizeof(ProgressString), "Loading %s...", File);
@@ -554,13 +554,16 @@ LoadModule(
     RtlStringCbCopyA(ArcFileName, sizeof(ArcFileName), ArcPath);
     RtlStringCbCatA(ArcFileName, sizeof(ArcFileName), File);
 
-    Success = PeLdrLoadImage(ArcFileName, MemoryType, &BaseAddress);
-    if (!Success)
+    if (!BaseAddress)
     {
-        TRACE("Loading %s failed\n", File);
-        return FALSE;
+        Success = PeLdrLoadImage(ArcFileName, MemoryType, &BaseAddress);
+        if (!Success)
+        {
+            TRACE("Loading %s failed\n", File);
+            return FALSE;
+        }
+        TRACE("%s loaded successfully at %p\n", File, BaseAddress);
     }
-    TRACE("%s loaded successfully at %p\n", File, BaseAddress);
 
     /*
      * Cheat about the base DLL name if we are loading
@@ -582,7 +585,8 @@ LoadWindowsCore(IN USHORT OperatingSystemVersion,
                 IN OUT PLOADER_PARAMETER_BLOCK1 LoaderBlock1,
                 IN PCSTR BootOptions,
                 IN PCSTR BootPath,
-                IN OUT PLDR_DATA_TABLE_ENTRY* KernelDTE)
+                IN OUT PLDR_DATA_TABLE_ENTRY* KernelDTE,
+                IN PVOID KernelAddress)
 {
     BOOLEAN Success;
     PCSTR Options;
@@ -654,10 +658,12 @@ LoadWindowsCore(IN USHORT OperatingSystemVersion,
     TRACE("HAL file = '%s' ; Kernel file = '%s'\n", HalFileName, KernelFileName);
 
     /* Load the Kernel */
-    LoadModule(LoaderBlock1, DirPath, ArcPath, KernelFileName, "ntoskrnl.exe", LoaderSystemCode, KernelDTE, 30);
+    LoadModule(LoaderBlock1, DirPath, ArcPath, KernelFileName, "ntoskrnl.exe", LoaderSystemCode,
+               KernelDTE, 30, KernelAddress);
 
     /* Load the HAL */
-    LoadModule(LoaderBlock1, DirPath, ArcPath, HalFileName, "hal.dll", LoaderHalCode, &HalDTE, 45);
+    LoadModule(LoaderBlock1, DirPath, ArcPath, HalFileName, "hal.dll", LoaderHalCode, &HalDTE,
+               45, NULL);
 
     /* Load the Kernel Debugger Transport DLL */
     if (OperatingSystemVersion > _WIN32_WINNT_WIN2K)
@@ -740,7 +746,8 @@ LoadWindowsCore(IN USHORT OperatingSystemVersion,
              * Load the transport DLL. Override the base DLL name of the
              * loaded transport DLL to the default "KDCOM.DLL" name.
              */
-            LoadModule(LoaderBlock1, DirPath, ArcPath, KdTransportDllName, "kdcom.dll", LoaderSystemCode, &KdComDTE, 60);
+            LoadModule(LoaderBlock1, DirPath, ArcPath, KdTransportDllName, "kdcom.dll", LoaderSystemCode,
+                       &KdComDTE, 60, NULL);
         }
     }
 
@@ -817,6 +824,60 @@ WinLdrInitErrataInf(
     return TRUE;
 }
 
+BOOLEAN
+LoadKernel(
+    IN PCHAR BootOptions,
+    IN PCHAR BootPath,
+    OUT PVOID KernelAddress)
+{
+    PCHAR Options;
+    CHAR FileName[MAX_PATH];
+    CHAR ArcFileName[MAX_PATH];
+
+    RtlStringCbCopyA(FileName, sizeof(FileName), "ntoskrnl.exe");
+
+    /* Find any "/KERNEL=" switch in the boot options */
+    Options = BootOptions;
+    while (Options)
+    {
+        /* Skip possible initial whitespace */
+        Options += strspn(Options, " \t");
+
+        /* Check whether a new option starts and it is either HAL or KERNEL */
+        if (*Options != '/' || (++Options,
+            !(_strnicmp(Options, "KERNEL=", 7) == 0)) )
+        {
+            /* Search for another whitespace */
+            Options = strpbrk(Options, " \t");
+            continue;
+        }
+        else
+        {
+            size_t i = strcspn(Options, " \t"); /* Skip whitespace */
+            if (i == 0)
+            {
+                /* Use the default values */
+                break;
+            }
+
+            if (_strnicmp(Options, "KERNEL=", 7) == 0)
+            {
+                Options += 7; i -= 7;
+                RtlStringCbCopyNA(FileName, sizeof(FileName), Options, i);
+                _strupr(FileName);
+            }
+        }
+    }
+
+    TRACE("Kernel file = '%s'\n", FileName);
+
+    RtlStringCbCopyA(ArcFileName, sizeof(ArcFileName), BootPath);
+    RtlStringCbCatA(ArcFileName, sizeof(ArcFileName), "system32\\");
+    RtlStringCbCatA(ArcFileName, sizeof(ArcFileName), FileName);
+
+    return PeLdrLoadImage(ArcFileName, LoaderSystemCode, KernelAddress);
+}
+
 ARC_STATUS
 LoadAndBootWindows(
     IN ULONG Argc,
@@ -838,6 +899,7 @@ LoadAndBootWindows(
     CHAR BootPath[MAX_PATH];
     CHAR FileName[MAX_PATH];
     CHAR BootOptions[256];
+    PVOID KernelAddress;
 
     /* Retrieve the (mandatory) boot type */
     ArgValue = GetArgumentValue(Argc, Argv, "BootType");
@@ -978,6 +1040,12 @@ LoadAndBootWindows(
     /* Let user know we started loading */
     //UiDrawStatusText("Loading...");
 
+    if (!LoadKernel(BootOptions, BootPath, &KernelAddress))
+    {
+        UiMessageBox("Failed to load kernel");
+        return EINVAL;
+    }
+
     /* Fixup the version number using data from the registry */
     if (OperatingSystemVersion == 0)
         OperatingSystemVersion = WinLdrDetectVersion();
@@ -1017,7 +1085,8 @@ LoadAndBootWindows(
                                     Extension2,
                                     BootOptions,
                                     BootPath,
-                                    FALSE);
+                                    FALSE,
+                                    KernelAddress);
 }
 
 ARC_STATUS
@@ -1031,7 +1100,8 @@ LoadAndBootWindowsCommon(
     PLOADER_PARAMETER_EXTENSION2 Extension2,
     PCSTR BootOptions,
     PCSTR BootPath,
-    BOOLEAN Setup)
+    BOOLEAN Setup,
+    PVOID KernelAddress)
 {
     void* LoaderBlockVA;
     BOOLEAN Success;
@@ -1061,7 +1131,8 @@ LoadAndBootWindowsCommon(
                               LoaderBlock1,
                               BootOptions,
                               BootPath,
-                              &KernelDTE);
+                              &KernelDTE,
+                              KernelAddress);
     if (!Success)
     {
         UiMessageBox("Error loading NTOS core.");
